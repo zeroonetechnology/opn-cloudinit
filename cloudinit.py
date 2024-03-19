@@ -1,52 +1,52 @@
-import requests
 import base64
-import secrets
-import string
-import bcrypt
-from cryptography.hazmat import backends
-from cryptography.hazmat.primitives.asymmetric import padding
-from cryptography.hazmat.primitives.serialization import load_ssh_public_key
+import time
+from os import path
 from opn_cloudinit.conf.opnsense import opnsense as opnsense_conf
-from opn_cloudinit.metadata.metadata import metadata 
-from opn_cloudinit.creds.credentials import credentials as creds
+from opn_cloudinit.metadata.metadata import metadata as metadata
+from opn_cloudinit.creds.credentials import credentials as credentials
 
 opnsense = opnsense_conf()
+meta = metadata()
+creds = credentials()
 
-# Confirm we can reach the endpoint
 
 def main():
+    
+    # Check if config has already completed
+    if path.exists('./metadata.txt') == True:
+        print("Metadata configuration has already completed, exiting")
+        quit()
+    
     # Add gateway rule to allow access to the metadata endpoint
     opnsense.set_gateway_options()
+    time.sleep(1)
+
+    # Test if we can reach the metadata endpoint
+    if meta.check_metadata() != 200:
+        print('Unable to reach metadata endpoint')
+        quit()
+    
     # Retrieve the hostname
-    hostname = requests.get('http://169.254.169.254/latest/meta-data/hostname').text
+    hostname = meta.get_hostname()
     print (f"Hostname: {hostname}")
 
     # Retrieve the SSH public key
-    public_key = requests.get('http://169.254.169.254/latest/meta-data/public-keys/0/openssh-key').text
+    public_key = meta.get_public_key()
     print (f"Public key: {public_key}")
-
-    # Generate a (quasi) cryptographically-secure password
-    password = ''.join(secrets.choice(string.ascii_uppercase + string.ascii_lowercase + string.digits) for i in range(16))
-    password_b64 = password.encode('utf-8')
-    print(f'Password (plaintext): {password}')
-
-    # Generate bcrypt
-    password_bcrypt = bcrypt.hashpw(password_b64,bcrypt.gensalt())
-    print(f"Password (bcrypt): {password_bcrypt.decode('utf-8')}")
-
-    # Enccrypt password against our SSH public key
-    key = load_ssh_public_key(public_key.encode('utf-8'),backends.default_backend())
-    enc_key = key.encrypt(
-        password_b64,
-        padding.PKCS1v15()
-        )
-    enc_password = base64.b64encode(enc_key)
+    
+    password_bcrypt, password_enc = creds.generate_password(public_key)
 
     # Post password to our metadata endpoint
-    put_pass = requests.post('http://169.254.169.254/openstack/2013-04-04/password',enc_password.decode('utf-8'))
-    print (put_pass.status_code)
-    print(f"Password (encrypted): f{enc_password.decode('utf-8')}")
+
+    meta.post_password(password_enc)
+    public_key_b64 = base64.b64encode(public_key)
+   
     opnsense.set_system_configuration(
         path = "./config.xml",
-        password = password_bcrypt.decode('utf-8')
+        password = password_bcrypt.decode('utf-8'),
+        ssh_keys = public_key_b64
     )
+
+    # Write a blank metadata file to specify script does not need to be re-run
+    open('./metadata.txt', 'w')
+    
