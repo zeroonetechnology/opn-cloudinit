@@ -251,7 +251,7 @@ class opnsense:
 
     def set_gateway_route(self, path=CONST_OPNSENSE_CONFIG_PATH, **kwargs):
         if(not os.path.isfile(path)): raise ValueError(f"Config File {path} does not exist")
-        backup = self.backup_configbackup_config(path, 'create_filter_rule')
+        backup = self.backup_config(path, 'create_filter_rule')
         xml_tree = ET.parse(path)
         xml_root = xml_tree.getroot()
         routes_xml = xml_root.find('staticroutes')
@@ -279,7 +279,7 @@ class opnsense:
 
     def create_firewall_filter_role(self, path=CONST_OPNSENSE_CONFIG_PATH, **kwargs):
         if(not os.path.isfile(path)): raise ValueError(f"Config File {path} does not exist")
-        backup = self.backup_config(path, 'set_gateway_options')
+        backup = self.backup_config(path, 'create_firewall_filter_rule')
         xml_tree = ET.parse(path)
         xml_root = xml_tree.getroot()
         filter_xml = xml_root.find('filter')
@@ -290,7 +290,6 @@ class opnsense:
         ET.SubElement(rule, 'type').text = 'pass'
         ET.SubElement(rule, 'ipprotocol').text = 'inet'
         ET.SubElement(rule, 'interface').text = 'lan'
-        ET.SubElement(rule, 'interface').text = 'lan'
         src = ET.SubElement(rule, 'source')
         dst = ET.SubElement(rule, 'destination')
 
@@ -299,6 +298,10 @@ class opnsense:
         ET.SubElement(created, 'time').text = str(datetime.now().timestamp())
         ET.SubElement(created, 'description').text = 'cloudinit.py ZeroOneTech init'
 
+        if('associated_rule_id' in kwargs):
+            kwargs['associated-rule-id'] = kwargs['associated_rule_id']
+            del kwargs['associated-rule-id']
+        '''
         if('source' in kwargs):
             kwarg = 'source'
             if('any' == kwargs[kwarg]): ET.SubElement(src, 'any')
@@ -311,19 +314,25 @@ class opnsense:
             elif(kwargs[kwarg].split(':')[0] == 'addr'): ET.SubElement(dst, 'address').text = kwargs[kwarg].split(':')[1]
             elif(kwargs[kwarg].split(':')[0] == 'net'): ET.SubElement(dst, 'network').text = kwargs[kwarg].split(':')[1]
             del kwargs[kwarg]
-        
+        '''    
         for kwarg in kwargs.keys():
             if('source' == kwarg):
                 if('any' == kwargs[kwarg]): ET.SubElement(src, 'any')
-                elif(kwargs[kwarg].split(':')[0] == 'addr'): ET.SubElement(src, 'address').text = kwargs[kwarg].split(':')[1]
-                elif(kwargs[kwarg].split(':')[0] == 'net'): ET.SubElement(src, 'network').text = kwargs[kwarg].split(':')[1]
-                del kwargs[kwarg]
+                else:
+                    command = kwargs[kwarg].split(':')
+                    if(len(command) == 3): ET.SubElement(src, 'port').text = command[2]
+                    if(command[0] == 'addr'): ET.SubElement(src, 'address').text = command[1]
+                    elif(command[0] == 'net'): ET.SubElement(src, 'network').text = command[1]
+                #del kwargs[kwarg]
                 continue
             if('destination' == kwarg):
                 if('any' == kwargs[kwarg]): ET.SubElement(dst, 'any')
-                elif(kwargs[kwarg].split(':')[0] == 'addr'): ET.SubElement(dst, 'address').text = kwargs[kwarg].split(':')[1]
-                elif(kwargs[kwarg].split(':')[0] == 'net'): ET.SubElement(dst, 'network').text = kwargs[kwarg].split(':')[1]
-                del kwargs[kwarg]
+                else:
+                    command = kwargs[kwarg].split(':')
+                    if(len(command) == 3): ET.SubElement(dst, 'port').text = command[2]
+                    if(command[0] == 'addr'): ET.SubElement(dst, 'address').text = command[1]
+                    if(command[0] == 'net'): ET.SubElement(dst, 'network').text = command[1]
+                #del kwargs[kwarg]
                 continue
             element = rule.find(kwarg)
             if(element is None): element = ET.SubElement(rule, kwarg)
@@ -336,52 +345,61 @@ class opnsense:
 
         self.write_configuration(xml_tree, path, backup, 'create_filter_rule')
         return True
-
-#set_system_configuration(hostname='fathackers-badcode',
-#                         domain='yolocolo.zeroone.tech',
-#                         dnssearchdomain='yolocolo.zeroone.tech',
-#                         path="config.xml", 
-#                         password=password_hash('opnsense'),
-#                         ssh=True,
-#                         dnsservers=['1.1.1.1','1.0.0.1'],
-#                         timezone='Etc/UTC',
-#                         timeservers=['0.au.pool.ntp.org','1.au.pool.ntp.org','2.au.pool.ntp.org'],
-#                         disablechecksumoffloading=1,
-#                         disablesegmentationoffloading=1,
-#                         disablelargereceiveoffloading=0,
-#                         ssh_keys='c3NoLXJzYSBBQUFBQjNOemFDMXljMkVBQUFBREFRQUJBQUFCQVFDd3JsVXFBeXdNYlU3VWI4ZGVaV21wdEVSRi9CaWJOU2RHS0taOC9aME1naUp4R3oyejhwb1psQUdmVjlMajhmMjFadkJpRE9LV21wS1pCK0pwZG0vQUJKNnBGWHdSL0FPOEtyWXVjanBWb29kVnA4M3FCZGpHSWtXZEsydS9EQUdTdWVyakNCV3hOV0pFdU9jUDhBRmhUTHVhWG1FT0g2T1dTTHJYN25xV0h4cGZBbklabzB3V204Vm03d2ZqSnRzckE4VFNZQis4aDN3cXdIeHltdnpyZ0diVm9od01PRFlwcThjblZaenNmK1BJZ05ld1hiUmYxTHUrcFRKZ1l6bWtNa1NFM09rbVR4ZGFjakd4SlFRaEYrcXhTSGFhR3BKZnpsZGF3bVc0L0FrMUlzbjJsdnlXL2ZDbXFtZk5iMEtob0p1NkV5dEdFdDMwMnhWUDVSamQgcnNhLWtleS0yMDI0MDIyNg')
-#set_system_tunable("test", path='config.xml', value='test', description='testing')
-#set_interface("lan", path='config.xml', ipaddr='dhcp')
-#set_dhcpd_options("lan", path='config.xml', enabled=0)
-#
-#CONST_METADATA_GW_NAME = 'GW_METADATA_API'
-#set_gateway_options(path="config.xml", gateway='172.16.0.11', descr='OpenStack Metadata API', disabled=0, interface='lan', name=CONST_METADATA_GW_NAME)
-#set_gateway_route(path="config.xml", network='169.254.169.254/32', gateway=CONST_METADATA_GW_NAME, disabled=1)
-#set_gateway_route(path="config.xml", network='169.254.169.253/32', gateway=CONST_METADATA_GW_NAME, disabled=0)
-
-
-#create_firewall_filter_role(path="config.xml", 
-#                            type='pass', 
-#                            interface='lan',
-#                            ipprotocol='inet',
-#                            statetype='keep state',
-#                            gateway=CONST_METADATA_GW_NAME,
-#                            direction='in',
-#                            quick=1,
-#                            source='net:lanip',
-#                            destination='addr:169.254.169.254',
-#                            descr='OpenStack Metadata API Access'
-#                        )
-#create_firewall_filter_role(path="config.xml", 
-#                            type='pass', 
-#                            interface='lan',
-#                            ipprotocol='inet',
-#                            statetype='keep state',
-#                            gateway=CONST_METADATA_GW_NAME,
-#                            direction='out',
-#                            quick=1,
-#                            source='addr:169.254.169.254',
-#                            destination='any',
-#                            descr='OpenStack Metadata API Access'
-#                        )
     
+    def create_firewall_nat_role(self, path=CONST_OPNSENSE_CONFIG_PATH, **kwargs):
+        if(not os.path.isfile(path)): raise ValueError(f"Config File {path} does not exist")
+        backup = self.backup_config(path, 'create_firewall_nat_rule')
+        xml_tree = ET.parse(path)
+        xml_root = xml_tree.getroot()
+        filter_xml = xml_root.find('nat')
+
+        rule = ET.SubElement(filter_xml, 'rule')
+
+        if('associated_rule_id' in kwargs):
+            kwargs['associated-rule-id'] = kwargs['associated_rule_id']
+            del kwargs['associated-rule-id']
+        if('local_port' in kwargs):
+            kwargs['local-port'] = kwargs['local_port']
+            del kwargs['local_port']
+
+        rule.set('uuid', str(uuid4()))
+        ET.SubElement(rule, 'ipprotocol').text = 'inet'
+        ET.SubElement(rule, 'interface').text = 'lan'
+        src = ET.SubElement(rule, 'source')
+        dst = ET.SubElement(rule, 'destination')
+
+        created = ET.SubElement(rule, 'created')
+        ET.SubElement(created, 'username').text = 'root@127.0.0.1'
+        ET.SubElement(created, 'time').text = str(datetime.now().timestamp())
+        ET.SubElement(created, 'description').text = 'cloudinit.py ZeroOneTech init'
+        
+        for kwarg in kwargs.keys():
+            if('source' == kwarg):
+                if('any' == kwargs[kwarg]): ET.SubElement(src, 'any')
+                else:
+                    command = kwargs[kwarg].split(':')
+                    if(len(command) == 3): ET.SubElement(src, 'port').text = command[2]
+                    if(command[0] == 'addr'): ET.SubElement(src, 'address').text = command[1]
+                    elif(command[0] == 'net'): ET.SubElement(src, 'network').text = command[1]
+                #del kwargs[kwarg]
+                continue
+            if('destination' == kwarg):
+                if('any' == kwargs[kwarg]): ET.SubElement(dst, 'any')
+                else:
+                    command = kwargs[kwarg].split(':')
+                    if(len(command) == 3): ET.SubElement(dst, 'port').text = command[2]
+                    if(command[0] == 'addr'): ET.SubElement(dst, 'address').text = command[1]
+                    if(command[0] == 'net'): ET.SubElement(dst, 'network').text = command[1]
+                #del kwargs[kwarg]
+                continue
+            element = rule.find(kwarg)
+            if(element is None): element = ET.SubElement(rule, kwarg)
+            element.text = str(kwargs[kwarg])
+            
+        updated = ET.SubElement(rule, 'created')
+        ET.SubElement(updated, 'username').text = 'root@127.0.0.1'
+        ET.SubElement(updated, 'time').text = str(datetime.now().timestamp())
+        ET.SubElement(updated, 'description').text = 'cloudinit.py ZeroOneTech init'
+
+        self.write_configuration(xml_tree, path, backup, 'create_filter_rule')
+        return True
